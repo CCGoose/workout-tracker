@@ -101,6 +101,8 @@
   .bandkgrow{display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); gap:10px;}
   .bandkgrow:last-child{border-bottom:none;}
   .bandkgrow input{width:80px; background:var(--card2); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:6px; font-size:13px;}
+  .progresswrap{background:var(--card2); border-radius:8px; height:14px; overflow:hidden;}
+  .progressfill{height:100%; background:var(--good); transition:width .3s ease;}
 </style>
 </head>
 <body>
@@ -167,6 +169,12 @@
     </div>
 
     <div class="card">
+      <div class="exname">今日蛋白質進度</div>
+      <div class="small" id="proteinProgressLabel" style="margin-bottom:6px;"></div>
+      <div class="progresswrap"><div class="progressfill" id="proteinProgressBar" style="width:0%;"></div></div>
+    </div>
+
+    <div class="card">
       <div class="exname">飲水量</div>
       <div class="waterbig" id="waterTotal">0 ml</div>
       <div class="waterbtns">
@@ -189,6 +197,11 @@
       <button class="btn ghost" id="addMealBtn">+ 新增餐點</button>
     </div>
 
+    <div class="card">
+      <div class="exname">熱量收支</div>
+      <div class="small" id="calorieBreakdown" style="line-height:1.8;"></div>
+    </div>
+
     <textarea class="notes" id="dietnotes" placeholder="飲食備註（食慾、消化狀況等）"></textarea>
     <button class="btn primary" id="saveDietBtn" style="margin-top:12px;">儲存今日飲食</button>
   </div>
@@ -196,6 +209,14 @@
   <div id="tab-history" style="display:none;"></div>
 
   <div id="tab-settings" style="display:none;">
+    <div class="card">
+      <div class="exname">每日蛋白質目標</div>
+      <div class="fieldrow">
+        <label>目標 (克)</label>
+        <input type="number" id="proteinTargetInput" min="0" step="5">
+      </div>
+      <div class="small">用來算「今日蛋白質進度」進度條，可依體重自行調整（常見建議約每公斤體重 1.6-2.2 克）。</div>
+    </div>
     <div class="card">
       <div class="exname">彈力帶阻力對照 (kg)</div>
       <div class="small" style="margin-bottom:10px;">依公斤數自動由輕到重排序，App 會依此判斷「該不該換下一條」</div>
@@ -280,7 +301,8 @@ const MEAL_TYPES = ["早餐", "午餐", "晚餐", "點心"];
 
 /* ---------- localStorage ---------- */
 const LS_KEY = "workout_tracker_v1";
-function freshDB(){ return { sessions:[], bandKg: Object.assign({}, DEFAULT_BAND_KG), nutrition:{}, aiSuggestion:null }; }
+const DEFAULT_PROTEIN_TARGET_G = 110;
+function freshDB(){ return { sessions:[], bandKg: Object.assign({}, DEFAULT_BAND_KG), nutrition:{}, aiSuggestion:null, proteinTargetG: DEFAULT_PROTEIN_TARGET_G }; }
 function loadDB(){
   try{
     const raw = localStorage.getItem(LS_KEY);
@@ -293,6 +315,7 @@ function loadDB(){
     if(!db.sessions) db.sessions = [];
     if(!db.nutrition) db.nutrition = {};
     if(db.aiSuggestion === undefined) db.aiSuggestion = null;
+    if(!db.proteinTargetG) db.proteinTargetG = DEFAULT_PROTEIN_TARGET_G;
     return db;
   }catch(e){ return freshDB(); }
 }
@@ -961,6 +984,80 @@ function loadDietDraft(){
   dietDraft = existing ? JSON.parse(JSON.stringify(existing)) : emptyNutritionDay();
 }
 
+/* ---------- 運動消耗熱量估算（粗估，非精確醫療級數值） ---------- */
+function findExerciseDefById(exId){
+  for(const key of Object.keys(PROGRAMS)){
+    const found = PROGRAMS[key].exercises.find(e=>e.id===exId);
+    if(found) return found;
+  }
+  return null;
+}
+// 依 MET (代謝當量) 粗估運動消耗熱量：kcal/分鐘 = MET × 3.5 × 體重(kg) / 200
+// 時間是用「每下動作秒數 + 組間休息」概略推算，不是精確計時，僅供參考。
+function estimateCaloriesBurnedForDate(dateKey, bodyWeightKg){
+  const session = DB.sessions.find(s=>s.date.slice(0,10)===dateKey);
+  if(!session) return 0;
+  let totalMinutes = 0;
+  session.exercises.forEach(ex=>{
+    const def = findExerciseDefById(ex.id);
+    if(!def) return; // 動作已被移除（例如舊版的凱格爾）就不列入估算
+    const sets = ex.sets || [];
+    if(def.type === 'time'){
+      const totalSec = sets.reduce((s,set)=>s+(set.reps||0),0); // time 類型的 reps 欄位存的就是秒數
+      const restSec = sets.length * 45;
+      totalMinutes += (totalSec + restSec) / 60;
+    } else {
+      const totalReps = sets.reduce((s,set)=>s+(set.reps||0)+(set.dropReps||0),0);
+      const workSec = totalReps * 3; // 概估每下動作約 3 秒
+      const restSec = sets.length * 60;
+      totalMinutes += (workSec + restSec) / 60;
+    }
+  });
+  const met = 4.0; // 一般阻力訓練/自體重量訓練的概略代謝當量
+  const weight = bodyWeightKg || 60;
+  const kcalPerMin = (met * 3.5 * weight) / 200;
+  return Math.round(kcalPerMin * totalMinutes);
+}
+function latestKnownWeight(){
+  const days = Object.keys(DB.nutrition).sort().reverse();
+  for(const d of days){
+    if(DB.nutrition[d].bodyWeightKg) return DB.nutrition[d].bodyWeightKg;
+  }
+  return null;
+}
+
+function renderCalorieSummary(){
+  const el = document.getElementById("calorieBreakdown");
+  if(!el || !dietDraft) return;
+  const eaten = dietDraft.meals.reduce((s,m)=>s+(m.calories||0),0);
+  const weight = dietDraft.bodyWeightKg || latestKnownWeight() || 60;
+  const burned = estimateCaloriesBurnedForDate(dietDate, weight);
+  const net = eaten - burned;
+  el.innerHTML = `
+    攝取熱量：${eaten} 大卡<br>
+    運動預估消耗：${burned} 大卡（依訓練紀錄粗估，非精確值）<br>
+    <b>淨熱量：${net>0?'+':''}${net} 大卡</b>${burned===0?'（這天沒有訓練紀錄，只算飲食）':''}
+  `;
+}
+
+function renderProteinProgress(){
+  const label = document.getElementById("proteinProgressLabel");
+  const bar = document.getElementById("proteinProgressBar");
+  if(!label || !bar || !dietDraft) return;
+  const total = dietDraft.meals.reduce((s,m)=>s+(m.proteinServings||0),0);
+  const target = DB.proteinTargetG || DEFAULT_PROTEIN_TARGET_G;
+  const pct = Math.min(100, Math.round((total/target)*100));
+  const hit = total >= target;
+  label.textContent = `${total}克 / 目標 ${target}克（${pct}%）${hit?' 已達標 ✅':''}`;
+  bar.style.width = pct + '%';
+  bar.style.background = hit ? 'var(--good)' : (pct>=70 ? 'var(--accentC)' : 'var(--bad)');
+}
+
+function refreshDietSummaries(){
+  renderCalorieSummary();
+  renderProteinProgress();
+}
+
 function renderMealList(){
   const el = document.getElementById("meal-list");
   if(!dietDraft.meals.length){
@@ -999,13 +1096,16 @@ function renderMealList(){
   }));
   el.querySelectorAll(".mealprotein").forEach(inp=>inp.addEventListener("input", e=>{
     dietDraft.meals[e.target.dataset.i].proteinServings = e.target.value===""?null:parseFloat(e.target.value);
+    refreshDietSummaries();
   }));
   el.querySelectorAll(".mealcal").forEach(inp=>inp.addEventListener("input", e=>{
     dietDraft.meals[e.target.dataset.i].calories = e.target.value===""?null:parseFloat(e.target.value);
+    refreshDietSummaries();
   }));
   el.querySelectorAll(".rmbtn").forEach(btn=>btn.addEventListener("click", e=>{
     dietDraft.meals.splice(parseInt(e.target.dataset.i),1);
     renderMealList();
+    refreshDietSummaries();
   }));
 }
 
@@ -1020,10 +1120,12 @@ function renderDiet(){
   document.getElementById("waterTotal").textContent = `${dietDraft.waterMl} ml`;
   document.getElementById("dietnotes").value = dietDraft.notes || "";
   renderMealList();
+  refreshDietSummaries();
 }
 
 document.getElementById("dietWeight").addEventListener("input", e=>{
   dietDraft.bodyWeightKg = e.target.value===""?null:parseFloat(e.target.value);
+  refreshDietSummaries();
 });
 document.getElementById("dietCreatine").addEventListener("change", e=>{
   dietDraft.creatine = e.target.checked;
@@ -1051,6 +1153,7 @@ document.getElementById("addMealBtn").addEventListener("click", ()=>{
   const defaultType = hour < 10 ? "早餐" : hour < 14 ? "午餐" : hour < 17 ? "點心" : "晚餐";
   dietDraft.meals.push({ mealType: defaultType, desc:"", proteinServings:null, calories:null });
   renderMealList();
+  refreshDietSummaries();
 });
 document.getElementById("saveDietBtn").addEventListener("click", ()=>{
   dietDraft.notes = document.getElementById("dietnotes").value;
@@ -1331,6 +1434,7 @@ function renderHistory(){
 function renderSettings(){
   updateFileSyncUI();
   updateDriveUI();
+  document.getElementById("proteinTargetInput").value = DB.proteinTargetG || DEFAULT_PROTEIN_TARGET_G;
   const el = document.getElementById("band-order-list");
   const order = bandOrder();
   el.innerHTML = order.map((c,i)=>`
@@ -1351,6 +1455,14 @@ function renderSettings(){
     });
   });
 }
+
+document.getElementById("proteinTargetInput").addEventListener("change", e=>{
+  const v = parseFloat(e.target.value);
+  DB.proteinTargetG = isNaN(v) || v<0 ? (DB.proteinTargetG || DEFAULT_PROTEIN_TARGET_G) : v;
+  saveDB(DB);
+  renderSettings();
+  refreshDietSummaries();
+});
 
 document.getElementById("exportBtn").addEventListener("click", ()=>{
   const blob = new Blob([JSON.stringify(DB, null, 2)], {type:"application/json"});
