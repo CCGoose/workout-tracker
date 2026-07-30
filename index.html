@@ -93,6 +93,8 @@
   .mealrow .fieldrow{margin-bottom:6px;}
   .mealrow .fieldrow label{width:70px;}
   .rmbtn{background:none; border:none; color:var(--bad); font-size:12px; cursor:pointer; padding:4px 0;}
+  .photobtn{background:none; border:1px dashed var(--border); color:var(--accentB); font-size:12px; cursor:pointer; padding:8px; width:100%; border-radius:8px; margin-bottom:6px;}
+  .photostatus{font-size:11px; color:var(--muted); margin:-2px 0 8px;}
   .droprow{margin-left:22px; opacity:0.9;}
   .droprow .idx{color:var(--accentB);}
   .adddropwrap{margin:-2px 0 10px 28px;}
@@ -1124,6 +1126,11 @@ function renderMealList(){
         <label>熱量(大卡)</label>
         <input type="number" class="mealcal" data-i="${i}" min="0" step="10" value="${m.calories ?? ''}" placeholder="大卡">
       </div>
+      ${aiConfigured() ? `
+      <button class="photobtn" data-i="${i}">📷 拍照估算熱量/蛋白質（AI，僅供參考）</button>
+      <input type="file" accept="image/*" capture="environment" class="mealphotoinput" data-i="${i}" style="display:none;">
+      <div class="photostatus" id="photostatus-${i}"></div>
+      ` : ''}
       <button class="rmbtn" data-i="${i}">刪除這筆餐點</button>
     </div>
   `).join('');
@@ -1146,6 +1153,34 @@ function renderMealList(){
     dietDraft.meals.splice(parseInt(e.target.dataset.i),1);
     renderMealList();
     refreshDietSummaries();
+  }));
+  el.querySelectorAll(".photobtn").forEach(btn=>btn.addEventListener("click", e=>{
+    const i = e.target.dataset.i;
+    el.querySelector(`.mealphotoinput[data-i="${i}"]`).click();
+  }));
+  el.querySelectorAll(".mealphotoinput").forEach(inp=>inp.addEventListener("change", async e=>{
+    const i = e.target.dataset.i;
+    const file = e.target.files[0];
+    e.target.value = ""; // 允許之後再選同一張照片
+    if(!file) return;
+    const statusEl = document.getElementById(`photostatus-${i}`);
+    const btn = el.querySelector(`.photobtn[data-i="${i}"]`);
+    if(btn) btn.disabled = true;
+    if(statusEl) statusEl.textContent = "AI 分析照片中…";
+    try{
+      const meal = dietDraft.meals[i];
+      const result = await estimateFoodFromPhoto(file, meal.desc || "");
+      if(result.calories !== null){ meal.calories = result.calories; }
+      if(result.protein !== null){ meal.proteinServings = result.protein; }
+      if(!meal.desc && result.desc){ meal.desc = result.desc; }
+      renderMealList();
+      refreshDietSummaries();
+      showToast("📷 AI 已估算熱量/蛋白質，可自行修改");
+    }catch(err){
+      if(statusEl) statusEl.textContent = "估算失敗："+err.message;
+      showToast("拍照估算失敗，請確認網路或稍後再試");
+    }
+    if(btn) btn.disabled = false;
   }));
 }
 
@@ -1297,15 +1332,61 @@ function buildAiPrompt(){
   return lines.join("\n");
 }
 
-async function callAiProxy(prompt){
+async function callAiProxy(prompt, imageBase64, mimeType){
+  const body = { prompt };
+  if(imageBase64){ body.imageBase64 = imageBase64; body.mimeType = mimeType || "image/jpeg"; }
   const res = await fetch(AI_PROXY_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt })
+    body: JSON.stringify(body)
   });
   const data = await res.json();
   if(data.error) throw new Error(data.error);
   return data.text || "（沒有收到回覆內容）";
+}
+
+/* ---------- 拍照估算食物熱量/蛋白質（透過同一個 AI 代理伺服器 + Gemini） ---------- */
+function fileToBase64(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      const result = reader.result || "";
+      const commaIdx = result.indexOf(",");
+      resolve(commaIdx >= 0 ? result.slice(commaIdx+1) : result);
+    };
+    reader.onerror = ()=>reject(reader.error || new Error("讀取照片失敗"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function buildFoodPhotoPrompt(descHint){
+  const lines = [];
+  lines.push("你是一位營養師。請根據這張食物照片，估算這一餐大約的熱量與蛋白質含量。");
+  if(descHint) lines.push(`使用者補充說明：${descHint}`);
+  lines.push("請務必只用下面這個格式回答，不要有其他多餘文字或說明：");
+  lines.push("熱量：<數字，大卡>");
+  lines.push("蛋白質：<數字，克>");
+  lines.push("描述：<15字以內，簡述這餐吃了什麼>");
+  lines.push("如果照片中有多樣食物，請估算全部加總。這只是粗略估算，僅供參考，不是精確營養分析。");
+  return lines.join("\n");
+}
+
+async function estimateFoodFromPhoto(file, descHint){
+  const imageBase64 = await fileToBase64(file);
+  const prompt = buildFoodPhotoPrompt(descHint);
+  const text = await callAiProxy(prompt, imageBase64, file.type);
+  const calMatch = text.match(/熱量[:：]\s*([\d.]+)/);
+  const proteinMatch = text.match(/蛋白質[:：]\s*([\d.]+)/);
+  const descMatch = text.match(/描述[:：]\s*(.+)/);
+  if(!calMatch && !proteinMatch){
+    throw new Error("AI 回覆格式無法解析，原始回覆：" + text);
+  }
+  return {
+    calories: calMatch ? Math.round(parseFloat(calMatch[1])) : null,
+    protein: proteinMatch ? Math.round(parseFloat(proteinMatch[1])) : null,
+    desc: descMatch ? descMatch[1].trim() : "",
+    raw: text
+  };
 }
 
 function storeAiSuggestion(text){
