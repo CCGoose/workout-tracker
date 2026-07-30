@@ -1175,6 +1175,18 @@ function renderMealList(){
       if(!meal.desc && result.desc){ meal.desc = result.desc; }
       renderMealList();
       refreshDietSummaries();
+      const refreshedStatusEl = document.getElementById(`photostatus-${i}`);
+      if(refreshedStatusEl){
+        const parts = [];
+        if(result.per100Cal !== null || result.per100Protein !== null){
+          parts.push(`每100克約：${result.per100Cal ?? '-'}大卡 / ${result.per100Protein ?? '-'}克蛋白質`);
+        }
+        if(result.weightG !== null){
+          parts.push(`AI 估計整份約 ${result.weightG}克`);
+        }
+        parts.push(`已依「整份」填入 ${result.calories ?? '-'}大卡 / ${result.protein ?? '-'}克；如果你只吃了一部分，請自行依比例調整上面的數字`);
+        refreshedStatusEl.textContent = parts.join('。');
+      }
       showToast("📷 AI 已估算熱量/蛋白質，可自行修改");
     }catch(err){
       if(statusEl) statusEl.textContent = "估算失敗："+err.message;
@@ -1361,13 +1373,16 @@ function fileToBase64(file){
 
 function buildFoodPhotoPrompt(descHint){
   const lines = [];
-  lines.push("你是一位營養師。請根據這張食物照片，估算這一餐大約的熱量與蛋白質含量。");
+  lines.push("你是一位營養師。請根據這張食物照片，估算營養資訊。因為使用者實際吃的量可能只是包裝的一部分、也可能是整盤全部吃完，請同時給「每100克」的密度資訊，以及「照片中這整份」的總量估算。");
   if(descHint) lines.push(`使用者補充說明：${descHint}`);
-  lines.push("請務必只用下面這個格式回答，不要有其他多餘文字或說明：");
-  lines.push("熱量：<數字，大卡>");
-  lines.push("蛋白質：<數字，克>");
-  lines.push("描述：<15字以內，簡述這餐吃了什麼>");
-  lines.push("如果照片中有多樣食物，請估算全部加總。這只是粗略估算，僅供參考，不是精確營養分析。");
+  lines.push("請務必只用下面這個格式回答，每項各佔一行，不要有其他多餘文字或說明：");
+  lines.push("每100克熱量：<數字，大卡>");
+  lines.push("每100克蛋白質：<數字，克>");
+  lines.push("整份重量：<數字，克，估算照片中這一整份大約多重>");
+  lines.push("整份熱量：<數字，大卡，整份總計>");
+  lines.push("整份蛋白質：<數字，克，整份總計>");
+  lines.push("描述：<15字以內，簡述這是什麼食物>");
+  lines.push("如果照片中有多樣食物，全部項目請加總計算。這只是粗略估算，僅供參考，不是精確營養分析。");
   return lines.join("\n");
 }
 
@@ -1375,15 +1390,21 @@ async function estimateFoodFromPhoto(file, descHint){
   const imageBase64 = await fileToBase64(file);
   const prompt = buildFoodPhotoPrompt(descHint);
   const text = await callAiProxy(prompt, imageBase64, file.type);
-  const calMatch = text.match(/熱量[:：]\s*([\d.]+)/);
-  const proteinMatch = text.match(/蛋白質[:：]\s*([\d.]+)/);
+  const per100CalMatch = text.match(/每100克熱量[:：]\s*([\d.]+)/);
+  const per100ProteinMatch = text.match(/每100克蛋白質[:：]\s*([\d.]+)/);
+  const weightMatch = text.match(/整份重量[:：]\s*([\d.]+)/);
+  const totalCalMatch = text.match(/整份熱量[:：]\s*([\d.]+)/);
+  const totalProteinMatch = text.match(/整份蛋白質[:：]\s*([\d.]+)/);
   const descMatch = text.match(/描述[:：]\s*(.+)/);
-  if(!calMatch && !proteinMatch){
+  if(!totalCalMatch && !totalProteinMatch){
     throw new Error("AI 回覆格式無法解析，原始回覆：" + text);
   }
   return {
-    calories: calMatch ? Math.round(parseFloat(calMatch[1])) : null,
-    protein: proteinMatch ? Math.round(parseFloat(proteinMatch[1])) : null,
+    calories: totalCalMatch ? Math.round(parseFloat(totalCalMatch[1])) : null,
+    protein: totalProteinMatch ? Math.round(parseFloat(totalProteinMatch[1])) : null,
+    per100Cal: per100CalMatch ? Math.round(parseFloat(per100CalMatch[1])) : null,
+    per100Protein: per100ProteinMatch ? Math.round(parseFloat(per100ProteinMatch[1])) : null,
+    weightG: weightMatch ? Math.round(parseFloat(weightMatch[1])) : null,
     desc: descMatch ? descMatch[1].trim() : "",
     raw: text
   };
