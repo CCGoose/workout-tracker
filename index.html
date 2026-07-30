@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>健身追蹤器</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root{
+    --bg:#0f1115; --card:#1a1d24; --card2:#20242c; --text:#e8e9ec; --muted:#8b93a3;
+    --accentA:#ff5d6c; --accentB:#4da8ff; --accentC:#ffb84d; --good:#3ecf8e; --bad:#ff5d6c;
+    --border:#2a2f3a;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang TC","Microsoft JhengHei",sans-serif;
+    background:var(--bg); color:var(--text); padding-bottom:60px;
+  }
+  header{
+    padding:16px 16px 8px; position:sticky; top:0; background:var(--bg); z-index:10; border-bottom:1px solid var(--border);
+  }
+  h1{font-size:18px; margin:0 0 10px;}
+  .tabs{display:flex; gap:6px; overflow-x:auto;}
+  .tab{
+    padding:8px 14px; border-radius:20px; background:var(--card); color:var(--muted);
+    font-size:13px; white-space:nowrap; cursor:pointer; border:1px solid var(--border);
+  }
+  .tab.active{background:var(--accentB); color:#fff; border-color:var(--accentB);}
+  main{padding:14px;}
+  .daybtns{display:flex; gap:8px; margin-bottom:14px;}
+  .daybtn{flex:1; padding:14px 8px; border-radius:12px; text-align:center; font-weight:600; font-size:14px; cursor:pointer; border:2px solid var(--border); background:var(--card);}
+  .daybtn.A.sel{border-color:var(--accentA); background:rgba(255,93,108,0.15);}
+  .daybtn.B.sel{border-color:var(--accentB); background:rgba(77,168,255,0.15);}
+  .daybtn.C.sel{border-color:var(--accentC); background:rgba(255,184,77,0.15);}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:12px;
+  }
+  .exname{font-size:15px; font-weight:600; margin-bottom:2px;}
+  .extarget{font-size:12px; color:var(--muted); margin-bottom:10px;}
+  .sugg{
+    font-size:12px; padding:8px 10px; border-radius:8px; margin-bottom:10px; background:var(--card2); border-left:3px solid var(--good);
+  }
+  .sugg.warn{border-left-color:var(--bad);}
+  .sugg.flat{border-left-color:var(--muted);}
+  .setrow{display:flex; align-items:center; gap:6px; margin-bottom:6px;}
+  .setrow .idx{width:22px; font-size:12px; color:var(--muted); text-align:center;}
+  .setrow input[type=number], .setrow select{
+    background:var(--card2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 6px; font-size:14px; width:100%;
+  }
+  .setrow .w{flex:1.2;}
+  .setrow .r{flex:1;}
+  .failbtn{
+    flex:0 0 46px; height:38px; border-radius:8px; border:1px solid var(--border); background:var(--card2); color:var(--muted); font-size:12px; cursor:pointer;
+  }
+  .failbtn.on{background:var(--bad); color:#fff; border-color:var(--bad);}
+  .notes{width:100%; background:var(--card2); border:1px solid var(--border); border-radius:8px; color:var(--text); padding:8px; font-size:13px; margin-top:8px; resize:vertical;}
+  .savebar{
+    position:fixed; bottom:0; left:0; right:0; padding:12px 14px; background:var(--bg); border-top:1px solid var(--border);
+    display:flex; gap:8px;
+  }
+  .btn{
+    flex:1; padding:14px; border-radius:12px; border:none; font-size:15px; font-weight:600; cursor:pointer;
+  }
+  .btn.primary{background:var(--good); color:#06231a;}
+  .btn.ghost{background:var(--card); color:var(--text); border:1px solid var(--border);}
+  .hist-ex{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:12px;}
+  .hist-ex h3{margin:0 0 8px; font-size:14px;}
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th,td{padding:5px 4px; text-align:left; border-bottom:1px solid var(--border); color:var(--muted);}
+  td.v{color:var(--text);}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:30px 10px;}
+  .toast{
+    position:fixed; top:70px; left:50%; transform:translateX(-50%); background:var(--good); color:#06231a;
+    padding:10px 18px; border-radius:10px; font-size:13px; font-weight:600; z-index:100; opacity:0; transition:opacity .3s; pointer-events:none;
+  }
+  .toast.show{opacity:1;}
+  .settingsrow{display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border);}
+  .settingsrow:last-child{border-bottom:none;}
+  select.bandorder{background:var(--card2); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:4px;}
+  .small{font-size:11px; color:var(--muted);}
+  .fieldrow{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+  .fieldrow label{flex:0 0 auto; font-size:13px; color:var(--muted); width:110px;}
+  .fieldrow input[type=number], .fieldrow input[type=text], .fieldrow input[type=time]{
+    flex:1; background:var(--card2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px; font-size:14px;
+  }
+  .checkrow{display:flex; align-items:center; gap:8px; margin-bottom:10px; font-size:14px;}
+  .checkrow input{width:18px; height:18px;}
+  .waterbtns{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;}
+  .waterbtn{padding:8px 12px; border-radius:20px; background:var(--card2); border:1px solid var(--border); color:var(--text); font-size:13px; cursor:pointer;}
+  .waterbig{font-size:22px; font-weight:700; margin:4px 0 10px;}
+  .mealrow{background:var(--card2); border:1px solid var(--border); border-radius:10px; padding:10px; margin-bottom:8px;}
+  .mealrow .fieldrow{margin-bottom:6px;}
+  .mealrow .fieldrow label{width:70px;}
+  .rmbtn{background:none; border:none; color:var(--bad); font-size:12px; cursor:pointer; padding:4px 0;}
+  .bandkgrow{display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); gap:10px;}
+  .bandkgrow:last-child{border-bottom:none;}
+  .bandkgrow input{width:80px; background:var(--card2); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:6px; font-size:13px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>💪 健身追蹤器</h1>
+  <div class="tabs">
+    <div class="tab active" data-tab="log">訓練</div>
+    <div class="tab" data-tab="diet">飲食</div>
+    <div class="tab" data-tab="history">歷史 / 建議</div>
+    <div class="tab" data-tab="settings">設定</div>
+  </div>
+</header>
+
+<main>
+  <div id="tab-log">
+    <div class="card">
+      <div class="fieldrow" style="margin-bottom:6px;">
+        <label>訓練日期</label>
+        <input type="date" id="logDateInput">
+      </div>
+      <div class="waterbtns">
+        <div class="waterbtn" id="logDatePrev">◀ 前一天</div>
+        <div class="waterbtn" id="logDateToday">今天</div>
+        <div class="waterbtn" id="logDateNext">後一天 ▶</div>
+      </div>
+      <div class="small" id="logDateStatus" style="margin-top:6px;"></div>
+    </div>
+    <div class="daybtns">
+      <div class="daybtn A" data-day="A">🔴 A 推<br><span class="small">胸肩三頭</span></div>
+      <div class="daybtn B" data-day="B">🔵 B 拉<br><span class="small">展背二頭</span></div>
+      <div class="daybtn C" data-day="C">🟠 核心<br><span class="small">骨盆特訓</span></div>
+    </div>
+    <div id="exercise-list"></div>
+    <textarea class="notes" id="daynotes" placeholder="這天的備註（睡眠、狀態、疼痛等）"></textarea>
+  </div>
+
+  <div id="tab-diet" style="display:none;">
+    <div class="card">
+      <div class="fieldrow" style="margin-bottom:6px;">
+        <label>飲食日期</label>
+        <input type="date" id="dietDateInput">
+      </div>
+      <div class="waterbtns">
+        <div class="waterbtn" id="dietDatePrev">◀ 前一天</div>
+        <div class="waterbtn" id="dietDateToday">今天</div>
+        <div class="waterbtn" id="dietDateNext">後一天 ▶</div>
+      </div>
+      <div class="small" id="dietDateStatus" style="margin-top:6px;"></div>
+    </div>
+    <div class="card">
+      <div class="exname">體重 & 補給</div>
+      <div class="fieldrow">
+        <label>早上體重 (kg)</label>
+        <input type="number" id="dietWeight" step="0.1" min="0" placeholder="例如 62.4">
+      </div>
+      <div class="small" style="margin-bottom:8px;">目標：12月底前穩步到 60-61 kg</div>
+      <div class="checkrow"><input type="checkbox" id="dietCreatine"> <label for="dietCreatine">已補充 5g 肌酸</label></div>
+    </div>
+
+    <div class="card">
+      <div class="exname">飲水量</div>
+      <div class="waterbig" id="waterTotal">0 ml</div>
+      <div class="waterbtns">
+        <div class="waterbtn" data-add="250">+250ml</div>
+        <div class="waterbtn" data-add="500">+500ml</div>
+        <div class="waterbtn" data-add="750">+750ml</div>
+        <div class="waterbtn" data-add="-250">-250ml</div>
+      </div>
+      <div class="fieldrow">
+        <label>自訂 (ml)</label>
+        <input type="number" id="waterCustom" step="50" min="0">
+        <button class="btn ghost" id="waterCustomAdd" style="flex:0 0 60px;">加入</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="exname">今日餐點</div>
+      <div class="small" style="margin-bottom:8px;">建議每餐吃到「一整個掌心大小與厚度」的蛋白質</div>
+      <div id="meal-list"></div>
+      <button class="btn ghost" id="addMealBtn">+ 新增餐點</button>
+    </div>
+
+    <textarea class="notes" id="dietnotes" placeholder="飲食備註（食慾、消化狀況等）"></textarea>
+    <button class="btn primary" id="saveDietBtn" style="margin-top:12px;">儲存今日飲食</button>
+  </div>
+
+  <div id="tab-history" style="display:none;"></div>
+
+  <div id="tab-settings" style="display:none;">
+    <div class="card">
+      <div class="exname">彈力帶阻力對照 (kg)</div>
+      <div class="small" style="margin-bottom:10px;">依公斤數自動由輕到重排序，App 會依此判斷「該不該換下一條」</div>
+      <div id="band-order-list"></div>
+    </div>
+    <div class="card">
+      <div class="exname">漸進原則</div>
+      <div class="small">
+        雙進式漸進 (Double Progression)：同一重量/彈力帶，先把每組次數練到目標區間上限且最後一組接近力竭 → 下次才增加重量或換更硬的彈力帶，次數重新從區間下限開始。若沒力竭且已達上限次數，也會建議增加難度。若沒達到區間下限，維持原重量、下次專注動作品質。
+      </div>
+    </div>
+    <div class="card">
+      <div class="exname">Google Drive 雲端同步（手機 + 電腦通用）</div>
+      <div class="small" id="driveSyncStatus" style="margin-bottom:10px;"></div>
+      <button class="btn ghost" id="driveSignInBtn" style="margin-bottom:8px;">登入 Google 帳號</button>
+      <button class="btn ghost" id="driveUploadBtn" style="margin-bottom:8px;">立即同步到雲端</button>
+      <button class="btn ghost" id="driveDownloadBtn" style="margin-bottom:8px;">從雲端下載最新版</button>
+      <button class="btn ghost" id="driveSignOutBtn">登出</button>
+      <div class="small" style="margin-top:8px;">需要先部署到網址（例如 GitHub Pages）並設定好 Google Client ID 才能使用，本機直接打開檔案（file://）無法登入。</div>
+    </div>
+    <div class="card">
+      <div class="exname">本地檔案同步</div>
+      <div class="small" id="fileSyncStatus" style="margin-bottom:10px;"></div>
+      <button class="btn ghost" id="linkFileBtn" style="margin-bottom:8px;">選擇/連結本地檔案</button>
+      <button class="btn ghost" id="reauthFileBtn" style="margin-bottom:8px;">重新授權連結</button>
+      <button class="btn ghost" id="restoreFileBtn" style="margin-bottom:8px;">從連結的檔案還原</button>
+      <button class="btn ghost" id="unlinkFileBtn">解除連結</button>
+      <div class="small" style="margin-top:8px;">連結後，每次儲存都會自動把資料寫進你電腦上的這個檔案，就算清瀏覽器資料也不會不見。目前僅電腦版 Chrome / Edge 支援。</div>
+    </div>
+    <div class="card">
+      <div class="exname">備份 / 匯入</div>
+      <button class="btn ghost" id="exportBtn" style="margin-bottom:8px;">匯出備份 (JSON)</button>
+      <button class="btn ghost" id="importBtn" style="margin-bottom:8px;">從備份檔案匯入</button>
+      <input type="file" id="importFileInput" accept="application/json" style="display:none;">
+      <button class="btn ghost" id="clearBtn">清除所有紀錄</button>
+    </div>
+  </div>
+</main>
+
+<div class="savebar" id="savebar">
+  <button class="btn ghost" id="resetBtn">清空本次輸入</button>
+  <button class="btn primary" id="saveBtn">儲存今日紀錄</button>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- 資料模型：來自 Google Calendar 的三日菜單 ---------- */
+const PROGRAMS = {
+  A: {
+    label: "A主題【推・胸肩三頭】",
+    exercises: [
+      { id:"a1", name:"下斜伏地挺身（雙腳墊高）", type:"bodyweight", sets:4, repLo:8, repHi:12, unit:"kg(額外負重)" , startWeight:0},
+      { id:"a2", name:"門錨彈力帶三頭下壓", type:"band", sets:4, repLo:12, repHi:15, startBand:"藍" },
+      { id:"a3", name:"彈力帶站姿側平舉", type:"band", sets:5, repLo:15, repHi:20, startBand:"黃" },
+      { id:"a4", name:"椅子反屈伸", type:"bodyweight", sets:3, repLo:12, repHi:15, unit:"kg(額外負重)", startWeight:0 },
+    ]
+  },
+  B: {
+    label: "B主題【拉・展背二頭】",
+    exercises: [
+      { id:"b1", name:"彈力帶坐姿划船", type:"band", sets:4, repLo:12, repHi:15, startBand:"黑" },
+      { id:"b2", name:"彈力帶站姿二頭彎舉", type:"band", sets:4, repLo:12, repHi:15, startBand:"綠" },
+      { id:"b3", name:"彈力帶錘式彎舉", type:"band", sets:3, repLo:12, repHi:15, startBand:"綠" },
+      { id:"b4", name:"門錨彈力帶面拉", type:"band", sets:3, repLo:15, repHi:15, startBand:"藍" },
+    ]
+  },
+  C: {
+    label: "核心與骨盆隱形特訓日",
+    exercises: [
+      { id:"c1", name:"基礎凱格爾控肌", type:"time", sets:3, repLo:0, repHi:0, unit:"（收放各5秒 x10 + 快速x10）" },
+      { id:"c2", name:"橋式動態特訓", type:"bodyweight", sets:3, repLo:15, repHi:15, unit:"kg(髖部加重)", startWeight:0 },
+      { id:"c3", name:"平板支撐 Plank", type:"time", sets:3, repLo:45, repHi:60, unit:"秒" },
+      { id:"c4", name:"仰臥捲腹 Crunches", type:"bodyweight", sets:3, repLo:15, repHi:20, unit:"kg(額外負重)", startWeight:0 },
+    ]
+  }
+};
+
+// 彈力帶阻力對照 (kg)，由輕到重；可在設定頁調整數值
+const DEFAULT_BAND_KG = { "黃":4.6, "綠":9.1, "紅":13.6, "藍":18.2, "黑":22.7 };
+
+/* ---------- localStorage ---------- */
+const LS_KEY = "workout_tracker_v1";
+function freshDB(){ return { sessions:[], bandKg: Object.assign({}, DEFAULT_BAND_KG), nutrition:{} }; }
+function loadDB(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return freshDB();
+    const db = JSON.parse(raw);
+    if(!db.bandKg){
+      // 相容舊版 bandOrder 格式
+      db.bandKg = Object.assign({}, DEFAULT_BAND_KG);
+    }
+    if(!db.sessions) db.sessions = [];
+    if(!db.nutrition) db.nutrition = {};
+    return db;
+  }catch(e){ return freshDB(); }
+}
+function saveDB(db){
+  localStorage.setItem(LS_KEY, JSON.stringify(db));
+  writeDBToFile();  // 有連結本地檔案時，順便同步寫入（非同步、失敗不影響使用）
+  driveUpload();    // 有登入 Google 時，順便同步到雲端（非同步、失敗不影響使用）
+}
+let DB = loadDB();
+
+/* ---------- Google Drive 雲端同步 ---------- */
+// 1. 到 https://console.cloud.google.com 建專案 → 啟用 Google Drive API
+// 2. OAuth 同意畫面設定為「外部」，範圍加 drive.file，並把自己的 Google 帳號加進「測試使用者」
+// 3. 建立憑證 → OAuth 用戶端 ID → 應用程式類型選「網頁應用程式」
+//    已授權的 JavaScript 來源填你的 GitHub Pages 網址，例如 https://yourname.github.io
+// 4. 把產生的 Client ID 貼到下面這行取代預設文字
+const GOOGLE_CLIENT_ID = "請貼上你的 Google OAuth Client ID（例如 123456-abc.apps.googleusercontent.com）";
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const DRIVE_FILE_NAME = "workout_tracker_data.json";
+let driveAccessToken = null;
+let driveFileId = null;
+let driveTokenClient = null;
+
+function driveConfigured(){
+  return GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith("請貼上");
+}
+
+function initGoogleAuth(){
+  if(!driveConfigured()) return;
+  if(typeof google === "undefined" || !google.accounts || !google.accounts.oauth2){
+    setTimeout(initGoogleAuth, 300); // GIS script 可能還在載入中
+    return;
+  }
+  driveTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: async (resp)=>{
+      if(resp.error){ showToast("Google 登入失敗："+resp.error); updateDriveUI(); return; }
+      driveAccessToken = resp.access_token;
+      showToast("已登入 Google ✅");
+      await driveFindOrCreateFile();
+      updateDriveUI();
+    }
+  });
+}
+
+function driveSignIn(){
+  if(!driveConfigured()){ showToast("請先在程式碼裡貼上 Google Client ID（見設定說明）"); return; }
+  if(!driveTokenClient){ showToast("Google 登入元件還在載入，請稍後再試"); return; }
+  driveTokenClient.requestAccessToken();
+}
+
+function driveSignOut(){
+  if(driveAccessToken && typeof google !== "undefined" && google.accounts && google.accounts.oauth2){
+    google.accounts.oauth2.revoke(driveAccessToken, ()=>{});
+  }
+  driveAccessToken = null;
+  driveFileId = null;
+  updateDriveUI();
+  showToast("已登出 Google");
+}
+
+async function driveFindOrCreateFile(){
+  if(!driveAccessToken) return;
+  try{
+    const q = encodeURIComponent(`name='${DRIVE_FILE_NAME}' and trashed=false`);
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)`, {
+      headers: { Authorization: `Bearer ${driveAccessToken}` }
+    });
+    const data = await res.json();
+    if(data.files && data.files.length>0){
+      driveFileId = data.files[0].id;
+    } else {
+      const metadata = { name: DRIVE_FILE_NAME, mimeType: "application/json" };
+      const createRes = await fetch("https://www.googleapis.com/drive/v3/files", {
+        method:"POST",
+        headers: { Authorization:`Bearer ${driveAccessToken}`, "Content-Type":"application/json" },
+        body: JSON.stringify(metadata)
+      });
+      const created = await createRes.json();
+      driveFileId = created.id;
+      await driveUpload();
+    }
+  }catch(e){ /* 靜默失敗，狀態列會反映未連上 */ }
+}
+
+async function driveUpload(){
+  if(!driveAccessToken || !driveFileId) return false;
+  try{
+    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
+      method:"PATCH",
+      headers: { Authorization:`Bearer ${driveAccessToken}`, "Content-Type":"application/json" },
+      body: JSON.stringify(DB)
+    });
+    return res.ok;
+  }catch(e){ return false; }
+}
+
+async function driveDownload(){
+  if(!driveAccessToken){ showToast("請先登入 Google"); return; }
+  if(!driveFileId) await driveFindOrCreateFile();
+  if(!driveFileId){ showToast("找不到雲端檔案"); return; }
+  try{
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${driveAccessToken}` }
+    });
+    const data = await res.json();
+    if(!data || typeof data !== "object"){ showToast("雲端檔案格式不正確"); return; }
+    if(!confirm("確定要用雲端上的資料取代這台裝置目前的資料嗎？")) return;
+    DB = Object.assign(freshDB(), data);
+    localStorage.setItem(LS_KEY, JSON.stringify(DB));
+    showToast("已從雲端還原資料 ✅");
+    renderHistory();
+    if(currentDay) refreshLogForCurrentDay();
+  }catch(e){ showToast("下載失敗："+e.message); }
+}
+
+function updateDriveUI(){
+  const el = document.getElementById("driveSyncStatus");
+  if(!el) return;
+  if(!driveConfigured()){
+    el.textContent = "尚未設定 Google Client ID（見下方說明）";
+    return;
+  }
+  if(!driveAccessToken){
+    el.textContent = "尚未登入 Google，資料只存在這台裝置裡";
+    return;
+  }
+  el.textContent = driveFileId
+    ? `已登入，雲端檔案：${DRIVE_FILE_NAME}（每次儲存會自動同步）`
+    : "已登入，正在準備雲端檔案…";
+}
+
+/* ---------- 本地檔案同步 (File System Access API) ---------- */
+const FS_IDB_NAME = "workout_tracker_fs";
+const fsApiSupported = typeof window !== "undefined" && "showSaveFilePicker" in window;
+let fileHandle = null;
+
+function idbOpen(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(FS_IDB_NAME, 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore("handles"); };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function idbSet(key, val){
+  const db = await idbOpen();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction("handles", "readwrite");
+    tx.objectStore("handles").put(val, key);
+    tx.oncomplete = ()=>resolve();
+    tx.onerror = ()=>reject(tx.error);
+  });
+}
+async function idbGet(key){
+  const db = await idbOpen();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction("handles", "readonly");
+    const req = tx.objectStore("handles").get(key);
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function idbDelete(key){
+  const db = await idbOpen();
+  return new Promise((resolve, reject)=>{
+    const tx = db.transaction("handles", "readwrite");
+    tx.objectStore("handles").delete(key);
+    tx.oncomplete = ()=>resolve();
+    tx.onerror = ()=>reject(tx.error);
+  });
+}
+
+function updateFileSyncUI(){
+  const el = document.getElementById("fileSyncStatus");
+  if(!el) return;
+  if(!fsApiSupported){
+    el.textContent = "此瀏覽器不支援本地檔案同步（請用電腦版 Chrome 或 Edge），可用下方「匯出/匯入備份」代替。";
+    return;
+  }
+  if(!fileHandle){
+    el.textContent = "尚未連結本地檔案，資料目前只存在瀏覽器裡。";
+    return;
+  }
+  el.textContent = `已連結本地檔案：${fileHandle.name || "workout_tracker_data.json"}（每次儲存會自動同步寫入）`;
+}
+
+async function tryRestoreHandle(){
+  if(!fsApiSupported) return;
+  try{
+    const h = await idbGet("fileHandle");
+    if(h) fileHandle = h;
+  }catch(e){ /* 忽略，當作沒有連結 */ }
+  updateFileSyncUI();
+}
+
+async function linkLocalFile(){
+  if(!fsApiSupported){ showToast("這個瀏覽器不支援本地檔案同步"); return; }
+  try{
+    const handle = await window.showSaveFilePicker({
+      suggestedName: "workout_tracker_data.json",
+      types: [{ description:"JSON", accept:{ "application/json":[".json"] } }]
+    });
+    fileHandle = handle;
+    await idbSet("fileHandle", handle);
+    await writeDBToFile();
+    showToast("已連結本地檔案，之後每次儲存都會自動同步 ✅");
+  }catch(e){
+    if(e.name !== "AbortError") showToast("連結失敗："+e.message);
+  }
+  updateFileSyncUI();
+}
+
+async function reauthorizeLocalFile(){
+  if(!fileHandle){ showToast("尚未連結任何檔案"); return; }
+  try{
+    const perm = await fileHandle.requestPermission({ mode:"readwrite" });
+    if(perm === "granted"){ showToast("已重新授權 ✅"); await writeDBToFile(); }
+    else showToast("未取得授權");
+  }catch(e){ showToast("授權失敗："+e.message); }
+  updateFileSyncUI();
+}
+
+async function unlinkLocalFile(){
+  fileHandle = null;
+  try{ await idbDelete("fileHandle"); }catch(e){}
+  showToast("已解除連結（瀏覽器裡的資料仍保留）");
+  updateFileSyncUI();
+}
+
+async function writeDBToFile(){
+  if(!fileHandle) return;
+  try{
+    const perm = await fileHandle.queryPermission({ mode:"readwrite" });
+    if(perm !== "granted") return; // 需要使用者手動按「重新授權連結」
+    const writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(DB, null, 2));
+    await writable.close();
+  }catch(e){ /* 靜默失敗，不影響一般使用 */ }
+}
+
+async function restoreFromFile(){
+  if(!fileHandle){ showToast("尚未連結本地檔案"); return; }
+  try{
+    const perm = await fileHandle.queryPermission({ mode:"read" });
+    if(perm !== "granted"){ showToast("請先按「重新授權連結」"); return; }
+    const file = await fileHandle.getFile();
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if(!data || typeof data !== "object"){ showToast("檔案內容格式不正確"); return; }
+    if(!confirm("確定要用這個檔案的內容取代目前所有資料嗎？")) return;
+    DB = Object.assign(freshDB(), data);
+    localStorage.setItem(LS_KEY, JSON.stringify(DB));
+    showToast("已從本地檔案還原資料 ✅");
+    renderHistory();
+    if(currentDay) refreshLogForCurrentDay();
+  }catch(e){ showToast("還原失敗："+e.message); }
+}
+
+/* ---------- date helpers ---------- */
+function pad2(n){ return String(n).padStart(2,'0'); }
+function keyFromDate(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+function todayKey(){ return keyFromDate(new Date()); }
+function addDaysKey(key, delta){
+  const [y,m,d] = key.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  dt.setDate(dt.getDate()+delta);
+  return keyFromDate(dt);
+}
+let logDate = todayKey();   // 目前正在填寫/編輯的訓練日期
+let dietDate = todayKey();  // 目前正在填寫/編輯的飲食日期
+
+/* ---------- helpers ---------- */
+function bandOrder(){
+  return Object.keys(DB.bandKg).sort((a,b)=>DB.bandKg[a]-DB.bandKg[b]);
+}
+function bandLabel(color){
+  const kg = DB.bandKg[color];
+  return kg !== undefined ? `${color} (${kg}kg)` : color;
+}
+function bandLevel(color){
+  const order = bandOrder();
+  const i = order.indexOf(color);
+  return i === -1 ? 0 : i;
+}
+function nextBand(color){
+  const order = bandOrder();
+  const i = bandLevel(color);
+  return order[Math.min(i+1, order.length-1)];
+}
+function lastLogFor(exId, beforeKey){
+  // beforeKey (可選): 只考慮該日期「之前」的紀錄，用來支援補填過去日期時給出正確的漸進建議
+  const candidates = DB.sessions.filter(s=>{
+    if(beforeKey !== undefined && s.date.slice(0,10) >= beforeKey) return false;
+    return s.exercises.some(e=>e.id===exId);
+  });
+  if(candidates.length===0) return null;
+  candidates.sort((a,b)=> a.date.localeCompare(b.date));
+  const s = candidates[candidates.length-1];
+  return { session:s, ex: s.exercises.find(e=>e.id===exId) };
+}
+function suggestFor(exDef, beforeKey){
+  const last = lastLogFor(exDef.id, beforeKey);
+  if(!last){
+    // 沒有歷史紀錄，用預設起始值
+    if(exDef.type === "band") return { text:`第一次記錄，建議從 ${exDef.startBand} 彈力帶開始，目標 ${exDef.sets}組 x ${exDef.repLo}-${exDef.repHi}下`, tone:"flat", value: exDef.startBand };
+    if(exDef.type === "bodyweight") return { text:`第一次記錄，先以徒手（0kg）挑戰 ${exDef.sets}組 x ${exDef.repLo}-${exDef.repHi}下`, tone:"flat", value: 0 };
+    return { text:`目標 ${exDef.sets}組`, tone:"flat", value:null };
+  }
+  const { ex } = last;
+  const sets = ex.sets || [];
+  if(sets.length === 0) return { text:"上次無有效紀錄", tone:"flat", value: ex.weight ?? ex.band };
+
+  if(exDef.type === "time"){
+    if(!exDef.repHi){
+      return { text:`持續進行即可，這項不需要增加重量或秒數`, tone:"flat" };
+    }
+    const timeIncr = 5; // 每次進步秒數
+    const allHitHigh = sets.every(s => s.reps >= exDef.repHi);
+    if(allHitHigh){
+      const nextTarget = exDef.repHi + timeIncr;
+      return { text:`上次全部達到 ${exDef.repHi}${exDef.unit||''}，建議增加：下次挑戰 ${nextTarget}${exDef.unit||''}（+${timeIncr}${exDef.unit||''}）或換更難的變化式`, tone:"good", value: nextTarget };
+    }
+    return { text:`上次時間 ${sets.map(s=>s.reps).join('/')}${exDef.unit||''}，維持相同秒數，目標練到 ${exDef.repHi}${exDef.unit||''}`, tone:"flat", value: exDef.repHi };
+  }
+
+  const allHitTop = sets.every(s => s.reps >= exDef.repHi);
+  const allHitBottom = sets.every(s => s.reps >= exDef.repLo);
+  const lastSetFailed = sets.length && sets[sets.length-1].failure;
+  const anyFailure = sets.some(s=>s.failure);
+
+  if(exDef.type === "band"){
+    const curBand = ex.band || exDef.startBand;
+    if(allHitTop && (lastSetFailed || anyFailure)){
+      const nb = nextBand(curBand);
+      if(nb === curBand) return { text:`已經是最重的彈力帶（${bandLabel(curBand)}）且全部達標力竭！可考慮增加組數或次數上限`, tone:"good", value: curBand };
+      return { text:`上次全部達到 ${exDef.repHi}下且有力竭，建議升級彈力帶：${bandLabel(curBand)} → ${bandLabel(nb)}，次數重新從 ${exDef.repLo}下開始`, tone:"good", value: nb };
+    }
+    if(allHitTop && !anyFailure){
+      return { text:`上次全部達到 ${exDef.repHi}下但沒力竭，${bandLabel(curBand)} 可能太輕，可提前升級到 ${bandLabel(nextBand(curBand))} 或增加組數`, tone:"good", value: nextBand(curBand) };
+    }
+    if(!allHitBottom){
+      return { text:`上次未達最低 ${exDef.repLo}下，維持 ${bandLabel(curBand)}，本次專注動作品質`, tone:"warn", value: curBand };
+    }
+    return { text:`維持 ${bandLabel(curBand)}，目標把每組次數練到 ${exDef.repHi}下`, tone:"flat", value: curBand };
+  }
+
+  // bodyweight with optional added weight
+  const curW = ex.weight ?? 0;
+  const incr = 1; // kg 每次增加量，可依需要調整
+  if(allHitTop && (lastSetFailed || anyFailure)){
+    return { text:`上次全部達到 ${exDef.repHi}下且有力竭，建議增加負重 ${curW}kg → ${curW+incr}kg，次數重新從 ${exDef.repLo}下開始`, tone:"good", value: curW+incr };
+  }
+  if(allHitTop && !anyFailure){
+    return { text:`上次全部達到 ${exDef.repHi}下但沒力竭，可以增加負重或組數`, tone:"good", value: curW+incr };
+  }
+  if(!allHitBottom){
+    return { text:`上次未達最低 ${exDef.repLo}下，維持 ${curW}kg，專注動作品質`, tone:"warn", value: curW };
+  }
+  return { text:`維持 ${curW}kg，目標把每組次數練到 ${exDef.repHi}下`, tone:"flat", value: curW };
+}
+
+/* ---------- UI state ---------- */
+let currentDay = null;
+let draft = {}; // exId -> {weight/band, sets:[{reps,failure}]}
+let editingExistingSession = null; // 若選定日期已有紀錄，指向該筆 session（供編輯用）
+
+function buildDefaultDraft(day){
+  const d = {};
+  PROGRAMS[day].exercises.forEach(ex=>{
+    const sug = suggestFor(ex, logDate);
+    const entry = { sets: [] };
+    for(let i=0;i<ex.sets;i++) entry.sets.push({ reps:null, failure:false });
+    if(ex.type === "band") entry.band = sug.value || ex.startBand;
+    if(ex.type === "bodyweight") entry.weight = sug.value ?? ex.startWeight ?? 0;
+    d[ex.id] = entry;
+  });
+  return d;
+}
+
+function initDraft(day){
+  draft = buildDefaultDraft(day);
+  editingExistingSession = DB.sessions.find(s=>s.day===day && s.date.slice(0,10)===logDate) || null;
+  if(editingExistingSession){
+    PROGRAMS[day].exercises.forEach(ex=>{
+      const found = editingExistingSession.exercises.find(e=>e.id===ex.id);
+      if(!found) return;
+      const entry = draft[ex.id];
+      if(ex.type==='band' && found.band) entry.band = found.band;
+      if(ex.type==='bodyweight' && found.weight !== undefined && found.weight !== null) entry.weight = found.weight;
+      (found.sets||[]).forEach((s,i)=>{ if(entry.sets[i]) entry.sets[i] = { reps: s.reps, failure: !!s.failure }; });
+    });
+  }
+}
+
+function updateLogDateStatus(){
+  const el = document.getElementById("logDateStatus");
+  if(!currentDay){ el.textContent = "請先選擇要練的菜單"; return; }
+  const label = PROGRAMS[currentDay].label;
+  el.textContent = editingExistingSession
+    ? `📝 ${logDate} 已有「${label}」的紀錄，修改後儲存即可覆蓋更新`
+    : `${logDate} 尚未有「${label}」的紀錄，儲存後將新增一筆`;
+}
+
+function refreshLogForCurrentDay(){
+  if(!currentDay) return;
+  initDraft(currentDay);
+  document.getElementById("daynotes").value = editingExistingSession ? (editingExistingSession.notes||'') : '';
+  renderExerciseList();
+  updateLogDateStatus();
+}
+
+function renderExerciseList(){
+  const container = document.getElementById("exercise-list");
+  if(!currentDay){ container.innerHTML = '<div class="empty">請先選擇今天要練哪個菜單（A / B / 核心）</div>'; return; }
+  const prog = PROGRAMS[currentDay];
+  let html = "";
+  prog.exercises.forEach(ex=>{
+    const sug = suggestFor(ex, logDate);
+    const toneClass = sug.tone === "good" ? "" : sug.tone === "warn" ? "warn" : "flat";
+    html += `<div class="card" data-exid="${ex.id}">
+      <div class="exname">${ex.name}</div>
+      <div class="extarget">目標：${ex.sets}組 × ${ex.type==='time' ? (ex.repLo?ex.repLo+'-':'') + ex.repHi + (ex.unit||'秒') : ex.repLo+'-'+ex.repHi+'下'}</div>
+      <div class="sugg ${toneClass}">${sug.text}</div>`;
+
+    if(ex.type === "band"){
+      html += `<div class="setrow"><div class="idx">帶</div>
+        <select class="bandsel w" data-exid="${ex.id}">
+          ${bandOrder().map(c=>`<option value="${c}" ${draft[ex.id].band===c?'selected':''}>${bandLabel(c)}</option>`).join('')}
+        </select>
+      </div>`;
+    } else if(ex.type === "bodyweight"){
+      html += `<div class="setrow"><div class="idx">${ex.unit && ex.unit.startsWith('kg') ? 'kg' : ''}</div>
+        <input type="number" class="weightinput w" data-exid="${ex.id}" step="0.5" min="0" value="${draft[ex.id].weight}">
+      </div>`;
+    }
+
+    for(let i=0;i<ex.sets;i++){
+      const s = draft[ex.id].sets[i];
+      html += `<div class="setrow">
+        <div class="idx">${i+1}</div>
+        <input type="number" class="repinput r" placeholder="${ex.type==='time'?'秒':'次'}" data-exid="${ex.id}" data-setidx="${i}" min="0" value="${s.reps ?? ''}">
+        <button class="failbtn ${s.failure?'on':''}" data-exid="${ex.id}" data-setidx="${i}">力竭</button>
+      </div>`;
+    }
+    html += `</div>`;
+  });
+  container.innerHTML = html;
+
+  // bind events
+  container.querySelectorAll(".bandsel").forEach(el=>{
+    el.addEventListener("change", e=>{
+      draft[e.target.dataset.exid].band = e.target.value;
+    });
+  });
+  container.querySelectorAll(".weightinput").forEach(el=>{
+    el.addEventListener("input", e=>{
+      draft[e.target.dataset.exid].weight = parseFloat(e.target.value)||0;
+    });
+  });
+  container.querySelectorAll(".repinput").forEach(el=>{
+    el.addEventListener("input", e=>{
+      const {exid, setidx} = e.target.dataset;
+      draft[exid].sets[setidx].reps = e.target.value === "" ? null : parseFloat(e.target.value);
+    });
+  });
+  container.querySelectorAll(".failbtn").forEach(el=>{
+    el.addEventListener("click", e=>{
+      const {exid, setidx} = e.target.dataset;
+      const s = draft[exid].sets[setidx];
+      s.failure = !s.failure;
+      e.target.classList.toggle("on", s.failure);
+    });
+  });
+}
+
+document.querySelectorAll(".daybtn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll(".daybtn").forEach(b=>b.classList.remove("sel"));
+    btn.classList.add("sel");
+    currentDay = btn.dataset.day;
+    refreshLogForCurrentDay();
+  });
+});
+
+document.getElementById("logDateInput").addEventListener("change", e=>{
+  logDate = e.target.value || todayKey();
+  refreshLogForCurrentDay();
+});
+document.getElementById("logDatePrev").addEventListener("click", ()=>{
+  logDate = addDaysKey(logDate, -1);
+  document.getElementById("logDateInput").value = logDate;
+  refreshLogForCurrentDay();
+});
+document.getElementById("logDateNext").addEventListener("click", ()=>{
+  logDate = addDaysKey(logDate, 1);
+  document.getElementById("logDateInput").value = logDate;
+  refreshLogForCurrentDay();
+});
+document.getElementById("logDateToday").addEventListener("click", ()=>{
+  logDate = todayKey();
+  document.getElementById("logDateInput").value = logDate;
+  refreshLogForCurrentDay();
+});
+
+document.getElementById("resetBtn").addEventListener("click", ()=>{
+  if(!currentDay) return;
+  draft = buildDefaultDraft(currentDay);
+  editingExistingSession = null;
+  document.getElementById("daynotes").value = "";
+  renderExerciseList();
+  updateLogDateStatus();
+});
+
+document.getElementById("saveBtn").addEventListener("click", ()=>{
+  if(!currentDay){ showToast("請先選擇要練的菜單"); return; }
+  const prog = PROGRAMS[currentDay];
+  const exercisesOut = [];
+  let hasAny = false;
+  prog.exercises.forEach(ex=>{
+    const d = draft[ex.id];
+    const setsOut = d.sets
+      .map(s=>({reps: s.reps, failure: !!s.failure}))
+      .filter(s=>s.reps !== null && s.reps !== undefined && !isNaN(s.reps));
+    if(setsOut.length>0) hasAny = true;
+    exercisesOut.push({
+      id: ex.id, name: ex.name, type: ex.type,
+      band: ex.type==='band' ? d.band : undefined,
+      weight: ex.type==='bodyweight' ? d.weight : undefined,
+      sets: setsOut
+    });
+  });
+  if(!hasAny){ showToast("至少輸入一組次數再儲存"); return; }
+  const session = {
+    date: `${logDate}T12:00:00`,
+    day: currentDay,
+    label: prog.label,
+    notes: document.getElementById("daynotes").value,
+    exercises: exercisesOut
+  };
+  const existingIdx = DB.sessions.findIndex(s=>s.day===currentDay && s.date.slice(0,10)===logDate);
+  const isUpdate = existingIdx >= 0;
+  if(isUpdate) DB.sessions[existingIdx] = session; else DB.sessions.push(session);
+  saveDB(DB);
+  showToast(isUpdate ? `已更新 ${logDate} 的訓練紀錄 ✅` : `已儲存 ${logDate} 的訓練紀錄 ✅`);
+  refreshLogForCurrentDay();
+  renderHistory();
+});
+
+function showToast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 1800);
+}
+
+/* ---------- Diet tab ---------- */
+function emptyNutritionDay(){
+  return { bodyWeightKg:null, creatine:false, waterMl:0, meals:[], notes:"" };
+}
+let dietDraft = null;
+
+function loadDietDraft(){
+  const existing = DB.nutrition[dietDate];
+  dietDraft = existing ? JSON.parse(JSON.stringify(existing)) : emptyNutritionDay();
+}
+
+function renderMealList(){
+  const el = document.getElementById("meal-list");
+  if(!dietDraft.meals.length){
+    el.innerHTML = '<div class="small" style="padding:6px 0;">還沒有餐點，點下面「新增餐點」開始記錄</div>';
+    return;
+  }
+  el.innerHTML = dietDraft.meals.map((m,i)=>`
+    <div class="mealrow" data-i="${i}">
+      <div class="fieldrow">
+        <label>時間</label>
+        <input type="time" class="mealtime" data-i="${i}" value="${m.time||''}">
+      </div>
+      <div class="fieldrow">
+        <label>吃了什麼</label>
+        <input type="text" class="mealdesc" data-i="${i}" placeholder="例如：雞胸肉、糙米、青菜" value="${(m.desc||'').replace(/"/g,'&quot;')}">
+      </div>
+      <div class="fieldrow">
+        <label>蛋白質份數</label>
+        <input type="number" class="mealprotein" data-i="${i}" min="0" step="0.5" value="${m.proteinServings ?? ''}" placeholder="掌心份">
+      </div>
+      <div class="fieldrow">
+        <label>熱量(可選)</label>
+        <input type="number" class="mealcal" data-i="${i}" min="0" step="10" value="${m.calories ?? ''}" placeholder="kcal">
+      </div>
+      <button class="rmbtn" data-i="${i}">刪除這筆餐點</button>
+    </div>
+  `).join('');
+
+  el.querySelectorAll(".mealtime").forEach(inp=>inp.addEventListener("input", e=>{
+    dietDraft.meals[e.target.dataset.i].time = e.target.value;
+  }));
+  el.querySelectorAll(".mealdesc").forEach(inp=>inp.addEventListener("input", e=>{
+    dietDraft.meals[e.target.dataset.i].desc = e.target.value;
+  }));
+  el.querySelectorAll(".mealprotein").forEach(inp=>inp.addEventListener("input", e=>{
+    dietDraft.meals[e.target.dataset.i].proteinServings = e.target.value===""?null:parseFloat(e.target.value);
+  }));
+  el.querySelectorAll(".mealcal").forEach(inp=>inp.addEventListener("input", e=>{
+    dietDraft.meals[e.target.dataset.i].calories = e.target.value===""?null:parseFloat(e.target.value);
+  }));
+  el.querySelectorAll(".rmbtn").forEach(btn=>btn.addEventListener("click", e=>{
+    dietDraft.meals.splice(parseInt(e.target.dataset.i),1);
+    renderMealList();
+  }));
+}
+
+function renderDiet(){
+  loadDietDraft();
+  document.getElementById("dietDateInput").value = dietDate;
+  document.getElementById("dietDateStatus").textContent = DB.nutrition[dietDate]
+    ? `📝 ${dietDate} 已有紀錄，修改後儲存即可覆蓋更新`
+    : `${dietDate} 尚未填寫，儲存後將新增一筆`;
+  document.getElementById("dietWeight").value = dietDraft.bodyWeightKg ?? "";
+  document.getElementById("dietCreatine").checked = !!dietDraft.creatine;
+  document.getElementById("waterTotal").textContent = `${dietDraft.waterMl} ml`;
+  document.getElementById("dietnotes").value = dietDraft.notes || "";
+  renderMealList();
+}
+
+document.getElementById("dietWeight").addEventListener("input", e=>{
+  dietDraft.bodyWeightKg = e.target.value===""?null:parseFloat(e.target.value);
+});
+document.getElementById("dietCreatine").addEventListener("change", e=>{
+  dietDraft.creatine = e.target.checked;
+});
+document.querySelectorAll(".waterbtn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    const add = parseInt(btn.dataset.add);
+    dietDraft.waterMl = Math.max(0, (dietDraft.waterMl||0) + add);
+    document.getElementById("waterTotal").textContent = `${dietDraft.waterMl} ml`;
+  });
+});
+document.getElementById("waterCustomAdd").addEventListener("click", ()=>{
+  const input = document.getElementById("waterCustom");
+  const v = parseInt(input.value);
+  if(!isNaN(v)){
+    dietDraft.waterMl = Math.max(0, (dietDraft.waterMl||0) + v);
+    document.getElementById("waterTotal").textContent = `${dietDraft.waterMl} ml`;
+    input.value = "";
+  }
+});
+document.getElementById("addMealBtn").addEventListener("click", ()=>{
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,'0');
+  const mm = String(now.getMinutes()).padStart(2,'0');
+  dietDraft.meals.push({ time:`${hh}:${mm}`, desc:"", proteinServings:null, calories:null });
+  renderMealList();
+});
+document.getElementById("saveDietBtn").addEventListener("click", ()=>{
+  dietDraft.notes = document.getElementById("dietnotes").value;
+  DB.nutrition[dietDate] = dietDraft;
+  saveDB(DB);
+  showToast(`已儲存 ${dietDate} 的飲食紀錄 ✅`);
+  renderDiet();
+});
+
+document.getElementById("dietDateInput").addEventListener("change", e=>{
+  dietDate = e.target.value || todayKey();
+  renderDiet();
+});
+document.getElementById("dietDatePrev").addEventListener("click", ()=>{
+  dietDate = addDaysKey(dietDate, -1);
+  renderDiet();
+});
+document.getElementById("dietDateNext").addEventListener("click", ()=>{
+  dietDate = addDaysKey(dietDate, 1);
+  renderDiet();
+});
+document.getElementById("dietDateToday").addEventListener("click", ()=>{
+  dietDate = todayKey();
+  renderDiet();
+});
+
+/* ---------- Tabs ---------- */
+document.querySelectorAll(".tab").forEach(t=>{
+  t.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active");
+    ["log","diet","history","settings"].forEach(name=>{
+      document.getElementById("tab-"+name).style.display = (name===t.dataset.tab) ? "block" : "none";
+    });
+    document.getElementById("savebar").style.display = (t.dataset.tab === "log") ? "flex" : "none";
+    if(t.dataset.tab === "diet") renderDiet();
+    if(t.dataset.tab === "history") renderHistory();
+    if(t.dataset.tab === "settings") renderSettings();
+  });
+});
+
+/* ---------- History tab ---------- */
+function renderDietHistory(){
+  const days = Object.keys(DB.nutrition).sort().reverse().slice(0,14);
+  if(days.length===0){
+    return '<div class="hist-ex"><h3>飲食紀錄</h3><div class="empty">還沒有任何飲食紀錄</div></div>';
+  }
+  const weights = days.map(d=>DB.nutrition[d].bodyWeightKg).filter(w=>w!==null && w!==undefined);
+  let trendNote = "";
+  if(weights.length>=2){
+    const latest = weights[0], earliest = weights[weights.length-1];
+    const diff = (latest-earliest).toFixed(1);
+    trendNote = `<div class="sugg ${latest<=61 && latest>=60 ? '' : 'flat'}">最新體重 ${latest}kg（目標 60-61kg），與 ${days.length} 天前相比變化 ${diff>0?'+':''}${diff}kg</div>`;
+  }
+  const rows = days.map(d=>{
+    const n = DB.nutrition[d];
+    const proteinTotal = n.meals.reduce((s,m)=>s+(m.proteinServings||0),0);
+    const calTotal = n.meals.reduce((s,m)=>s+(m.calories||0),0);
+    return `<tr>
+      <td class="v">${d.slice(5)}</td>
+      <td class="v">${n.bodyWeightKg ?? '-'}</td>
+      <td class="v">${n.waterMl||0}ml</td>
+      <td class="v">${n.creatine?'✅':'—'}</td>
+      <td class="v">${n.meals.length}餐 / 蛋白${proteinTotal||0}份${calTotal?` / ${calTotal}kcal`:''}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="hist-ex">
+    <h3>飲食紀錄（最近 ${days.length} 天）</h3>
+    ${trendNote}
+    <table>
+      <tr><th>日期</th><th>體重</th><th>飲水</th><th>肌酸</th><th>餐點</th></tr>
+      ${rows}
+    </table>
+  </div>`;
+}
+
+function renderHistory(){
+  const el = document.getElementById("tab-history");
+  const allExercises = [];
+  Object.values(PROGRAMS).forEach(p=>p.exercises.forEach(e=>allExercises.push(e)));
+
+  if(DB.sessions.length===0 && Object.keys(DB.nutrition).length===0){
+    el.innerHTML = '<div class="empty">還沒有任何紀錄，先去「訓練」或「飲食」記一筆吧！</div>';
+    return;
+  }
+
+  let html = "";
+  html += renderDietHistory();
+  if(DB.sessions.length===0){
+    html += '<div class="empty">還沒有任何訓練紀錄</div>';
+    el.innerHTML = html;
+    return;
+  }
+  allExercises.forEach(ex=>{
+    const logs = [];
+    DB.sessions.forEach(s=>{
+      const found = s.exercises.find(e=>e.id===ex.id);
+      if(found && found.sets && found.sets.length>0) logs.push({date:s.date, ex:found});
+    });
+    if(logs.length===0) return;
+    logs.sort((a,b)=>a.date.localeCompare(b.date));
+    const sug = suggestFor(ex);
+    const toneClass = sug.tone === "good" ? "" : sug.tone === "warn" ? "warn" : "flat";
+    html += `<div class="hist-ex">
+      <h3>${ex.name}</h3>
+      <div class="sugg ${toneClass}">下次建議：${sug.text}</div>
+      <table>
+        <tr><th>日期</th><th>${ex.type==='band'?'彈力帶':ex.type==='bodyweight'?'負重':''}</th><th>各組次數</th><th>力竭</th></tr>
+        ${logs.slice(-8).reverse().map(l=>{
+          const d = new Date(l.date);
+          const dateStr = `${d.getMonth()+1}/${d.getDate()}`;
+          const wv = ex.type==='band' ? bandLabel(l.ex.band||'-') : ex.type==='bodyweight' ? (l.ex.weight ?? 0)+'kg' : '-';
+          const reps = l.ex.sets.map(s=>s.reps).join('/');
+          const fail = l.ex.sets.map(s=>s.failure?'●':'○').join('');
+          return `<tr><td class="v">${dateStr}</td><td class="v">${wv}</td><td class="v">${reps}</td><td class="v">${fail}</td></tr>`;
+        }).join('')}
+      </table>
+    </div>`;
+  });
+  el.innerHTML = html || '<div class="empty">還沒有任何訓練紀錄</div>';
+}
+
+/* ---------- Settings tab ---------- */
+function renderSettings(){
+  updateFileSyncUI();
+  updateDriveUI();
+  const el = document.getElementById("band-order-list");
+  const order = bandOrder();
+  el.innerHTML = order.map((c,i)=>`
+    <div class="bandkgrow">
+      <span>${i+1}. ${c}（${i===0?'最輕':i===order.length-1?'最重':'中等'}）</span>
+      <span>
+        <input type="number" step="0.1" min="0" class="bandkginput" data-color="${c}" value="${DB.bandKg[c]}"> kg
+      </span>
+    </div>
+  `).join('');
+  el.querySelectorAll(".bandkginput").forEach(inp=>{
+    inp.addEventListener("change", e=>{
+      const c = e.target.dataset.color;
+      const v = parseFloat(e.target.value);
+      DB.bandKg[c] = isNaN(v) ? DB.bandKg[c] : v;
+      saveDB(DB);
+      renderSettings();
+    });
+  });
+}
+
+document.getElementById("exportBtn").addEventListener("click", ()=>{
+  const blob = new Blob([JSON.stringify(DB, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `workout_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+});
+document.getElementById("importBtn").addEventListener("click", ()=>{
+  document.getElementById("importFileInput").click();
+});
+document.getElementById("importFileInput").addEventListener("change", async e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  try{
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if(!data || typeof data !== "object"){ showToast("檔案內容格式不正確"); return; }
+    if(confirm("確定要用這個備份檔案取代目前所有資料嗎？")){
+      DB = Object.assign(freshDB(), data);
+      saveDB(DB);
+      showToast("已匯入備份資料 ✅");
+      renderHistory();
+      if(currentDay) refreshLogForCurrentDay();
+    }
+  }catch(err){
+    showToast("匯入失敗：檔案格式不正確");
+  }
+  e.target.value = "";
+});
+document.getElementById("clearBtn").addEventListener("click", ()=>{
+  if(confirm("確定要清除所有訓練與飲食紀錄嗎？此動作無法復原。")){
+    DB = freshDB();
+    saveDB(DB);
+    renderHistory();
+    showToast("已清除所有紀錄");
+  }
+});
+document.getElementById("linkFileBtn").addEventListener("click", linkLocalFile);
+document.getElementById("reauthFileBtn").addEventListener("click", reauthorizeLocalFile);
+document.getElementById("restoreFileBtn").addEventListener("click", restoreFromFile);
+document.getElementById("unlinkFileBtn").addEventListener("click", unlinkLocalFile);
+
+document.getElementById("driveSignInBtn").addEventListener("click", driveSignIn);
+document.getElementById("driveSignOutBtn").addEventListener("click", driveSignOut);
+document.getElementById("driveDownloadBtn").addEventListener("click", driveDownload);
+document.getElementById("driveUploadBtn").addEventListener("click", async ()=>{
+  if(!driveAccessToken){ showToast("請先登入 Google"); return; }
+  const ok = await driveUpload();
+  showToast(ok ? "已同步到雲端 ✅" : "同步失敗，請稍後再試");
+});
+
+/* ---------- init ---------- */
+document.getElementById("logDateInput").value = logDate;
+updateLogDateStatus();
+renderExerciseList();
+tryRestoreHandle();
+updateDriveUI();
+initGoogleAuth();
+</script>
+</body>
+</html>
