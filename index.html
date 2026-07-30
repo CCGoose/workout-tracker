@@ -96,6 +96,9 @@
   .droprow{margin-left:22px; opacity:0.9;}
   .droprow .idx{color:var(--accentB);}
   .adddropwrap{margin:-2px 0 10px 28px;}
+  .addsetwrap{margin:4px 0 6px;}
+  .addsetbtn{background:none; border:1px dashed var(--border); color:var(--good); font-size:13px; cursor:pointer; padding:8px; width:100%; border-radius:8px;}
+  .rmsetbtn{flex:0 0 32px; height:38px; border-radius:8px; border:1px solid var(--border); background:var(--card2); color:var(--bad); font-size:14px; cursor:pointer;}
   .adddropbtn{background:none; border:none; color:var(--accentB); font-size:12px; cursor:pointer; padding:2px 0; text-align:left;}
   .rmdropbtn{flex:0 0 32px; height:38px; border-radius:8px; border:1px solid var(--border); background:var(--card2); color:var(--bad); font-size:14px; cursor:pointer;}
   .bandkgrow{display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); gap:10px;}
@@ -139,7 +142,7 @@
     <div class="daybtns">
       <div class="daybtn A" data-day="A">🔴 A 推<br><span class="small">胸肩三頭</span></div>
       <div class="daybtn B" data-day="B">🔵 B 拉<br><span class="small">展背二頭</span></div>
-      <div class="daybtn C" data-day="C">🟠 核心<br><span class="small">骨盆特訓</span></div>
+      <div class="daybtn C" data-day="C">🟠 核心<br><span class="small">腹肌訓練</span></div>
     </div>
     <div id="exercise-list"></div>
     <textarea class="notes" id="daynotes" placeholder="這天的備註（睡眠、狀態、疼痛等）"></textarea>
@@ -732,7 +735,17 @@ function initDraft(day){
       if(!found) return;
       const entry = draft[ex.id];
       if(ex.type==='bodyweight' && found.weight !== undefined && found.weight !== null) entry.weight = found.weight;
-      (found.sets||[]).forEach((s,i)=>{
+      const foundSets = found.sets || [];
+      // 若上次紀錄有額外加組（超過預設組數），先把 entry.sets 補齊到一樣長，避免額外組數被截掉
+      while(entry.sets.length < foundSets.length){
+        if(ex.type === 'band'){
+          const prevBand = entry.sets.length ? entry.sets[entry.sets.length-1].band : ex.startBand;
+          entry.sets.push({ band: prevBand, reps:null, failure:false, dropBand:null, dropReps:null });
+        } else {
+          entry.sets.push({ reps:null, failure:false });
+        }
+      }
+      foundSets.forEach((s,i)=>{
         if(!entry.sets[i]) return;
         if(ex.type === 'band'){
           // s.band 是新格式（每組各自的帶子）；found.band 是舊格式的相容備援（整個動作只有一條帶子）
@@ -787,16 +800,20 @@ function renderExerciseList(){
       </div>`;
     }
 
-    for(let i=0;i<ex.sets;i++){
+    const totalSets = draft[ex.id].sets.length;
+    for(let i=0;i<totalSets;i++){
       const s = draft[ex.id].sets[i];
+      const isExtra = i >= ex.sets; // 超過預設組數的「額外加組」
+      const rmExtraBtn = isExtra ? `<button class="rmsetbtn" data-exid="${ex.id}" data-setidx="${i}">✕</button>` : '';
       if(ex.type === "band"){
         html += `<div class="setrow">
-          <div class="idx">${i+1}</div>
+          <div class="idx">${i+1}${isExtra?'+':''}</div>
           <select class="bandsel w" data-exid="${ex.id}" data-setidx="${i}">
             ${bandOrder().map(c=>`<option value="${c}" ${s.band===c?'selected':''}>${bandLabel(c)}</option>`).join('')}
           </select>
           <input type="number" class="repinput r" placeholder="次" data-exid="${ex.id}" data-setidx="${i}" min="0" value="${s.reps ?? ''}">
           <button class="failbtn ${s.failure?'on':''}" data-exid="${ex.id}" data-setidx="${i}">力竭</button>
+          ${rmExtraBtn}
         </div>`;
         if(s.dropBand || s.dropReps !== null){
           html += `<div class="setrow droprow">
@@ -812,12 +829,14 @@ function renderExerciseList(){
         }
       } else {
         html += `<div class="setrow">
-          <div class="idx">${i+1}</div>
+          <div class="idx">${i+1}${isExtra?'+':''}</div>
           <input type="number" class="repinput r" placeholder="${ex.type==='time'?'秒':'次'}" data-exid="${ex.id}" data-setidx="${i}" min="0" value="${s.reps ?? ''}">
           <button class="failbtn ${s.failure?'on':''}" data-exid="${ex.id}" data-setidx="${i}">力竭</button>
+          ${rmExtraBtn}
         </div>`;
       }
     }
+    html += `<div class="addsetwrap"><button class="addsetbtn" data-exid="${ex.id}">+ 加一組（今天多做的額外組數）</button></div>`;
     html += `</div>`;
   });
   container.innerHTML = html;
@@ -877,6 +896,27 @@ function renderExerciseList(){
       const idx = order.indexOf(s.band);
       s.dropBand = idx > 0 ? order[idx-1] : order[0];
       s.dropReps = null;
+      renderExerciseList();
+    });
+  });
+  container.querySelectorAll(".addsetbtn").forEach(el=>{
+    el.addEventListener("click", e=>{
+      const exid = e.target.dataset.exid;
+      const exDef = findExerciseDefById(exid);
+      const sets = draft[exid].sets;
+      if(exDef && exDef.type === 'band'){
+        const prevBand = sets.length ? sets[sets.length-1].band : (exDef.startBand || bandOrder()[0]);
+        sets.push({ band: prevBand, reps:null, failure:false, dropBand:null, dropReps:null });
+      } else {
+        sets.push({ reps:null, failure:false });
+      }
+      renderExerciseList();
+    });
+  });
+  container.querySelectorAll(".rmsetbtn").forEach(el=>{
+    el.addEventListener("click", e=>{
+      const {exid, setidx} = e.target.dataset;
+      draft[exid].sets.splice(parseInt(setidx), 1);
       renderExerciseList();
     });
   });
